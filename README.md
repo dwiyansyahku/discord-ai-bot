@@ -210,7 +210,7 @@ discord-ai-bot/
 → Pastikan ffmpeg terinstall dan ada di PATH
 
 **Image generation gagal?**
-→ Cek `SD_API_URL` atau `HF_API_KEY` di `.env`
+→ Cek `SD_API_URL` or `HF_API_KEY` di `.env`
 
 **Slash commands tidak muncul?**
 → Tunggu hingga 1 jam untuk Discord sync, atau kick + reinvite bot
