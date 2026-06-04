@@ -1,0 +1,27 @@
+# Sensitif / Konfigurasi
+.env
+.env.example.bak
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Temporary / Temp Audio files
+*.mp3
+*.wav
+temp/
+tmp/
+
+# IDE / Editor
+.vscode/
+.idea/
+.vs/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
