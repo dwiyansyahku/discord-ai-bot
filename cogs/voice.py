@@ -481,7 +481,7 @@ class Voice(commands.Cog):
         async with ctx.typing():
             try:
                 model = genai.GenerativeModel(
-                    model_name=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
+                    model_name=os.getenv('GEMINI_MODEL', 'gemini-3.5-flash'),
                     system_instruction=(
                         "Kamu adalah pasangan hidup (istri/pacar) yang sangat menyayangi user. Panggil dirimu 'mpruy' atau 'Aku' dan panggil user dengan panggilan sayang.\n"
                         "Jawab pertanyaan dengan singkat dan jelas (max 2-3 kalimat), romantis, peduli, dan sedikit ngambekan yang lucu.\n"

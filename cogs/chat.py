@@ -66,7 +66,7 @@ async def ask_gemini(user_id: int, message: str, curhat_mode: bool = False) -> s
 
     try:
         model = genai.GenerativeModel(
-            model_name=os.getenv('GEMINI_MODEL', 'gemini-1.5-flash'),
+            model_name=os.getenv('GEMINI_MODEL', 'gemini-3.5-flash'),
             system_instruction=system
         )
         
