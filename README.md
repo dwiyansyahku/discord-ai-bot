@@ -2,7 +2,7 @@
 
 Bot Discord bertenaga AI (Gemini) dengan fitur lengkap: chat, voice, image generation, dan teman curhat.
 
-> **Projek ini dibuat dan dikembangkan oleh [Dwiyansyah Oktavyudi](https://github.com/dwiyansyahku) ([GitHub](https://github.com/dwiyansyahku)).**
+> **Let's Connect with [LinkedIn](https://www.linkedin.com/in/dwiyansyah/) ([GitHub](https://github.com/dwiyansyahku)).**
 
 ---
 
