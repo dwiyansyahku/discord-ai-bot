@@ -332,16 +332,24 @@ class Voice(commands.Cog):
 
     async def respond_to_voice_chat(self, guild, user_id, text):
         """Meminta respon Gemini dan mengucapkannya ke voice channel"""
-        from cogs.chat import ask_gemini
+        from cogs.chat import ask_gemini, QuotaExhaustedError
         
-        reply = await ask_gemini(user_id, text)
-        clean_reply = reply.replace("*", "").replace("_", "").replace("`", "").strip()
-        
-        # Tambahkan pertanyaan konfirmasi di akhir
-        clean_reply_with_question = clean_reply + " Sayang masih mau lanjut cerita, atau udah selesai?"
-        self.awaiting_done_confirmation = True
-        
-        await self.speak_response(guild, clean_reply_with_question)
+        try:
+            reply = await ask_gemini(user_id, text)
+            clean_reply = reply.replace("*", "").replace("_", "").replace("`", "").strip()
+            
+            # Tambahkan pertanyaan konfirmasi di akhir
+            clean_reply_with_question = clean_reply + " Sayang masih mau lanjut cerita, atau udah selesai?"
+            self.awaiting_done_confirmation = True
+            
+            await self.speak_response(guild, clean_reply_with_question)
+        except QuotaExhaustedError:
+            channel = self.last_text_channels.get(guild.id)
+            if channel:
+                chat_cog = self.bot.get_cog('Chat')
+                if chat_cog and hasattr(chat_cog, 'is_channel_allowed') and chat_cog.is_channel_allowed(channel.id):
+                    await channel.send("maaf aku lagi cape kita udahan dulu ya sekarang nanti aku bakal balik lagi dengan versi terbaiku")
+                    await self.speak_response(guild, "maaf aku lagi cape kita udahan dulu ya sekarang nanti aku bakal balik lagi dengan versi terbaiku")
 
     async def speak_response(self, guild, text):
         """Mengucapkan teks ke voice channel menggunakan Edge TTS dan mengirimkannya ke text channel"""
@@ -500,7 +508,19 @@ class Voice(commands.Cog):
                 await self.speak_response(ctx.guild, jawaban)
 
             except Exception as e:
-                await ctx.reply(f"❌ Error: {e}")
+                import google.api_core.exceptions
+                err_str = str(e).lower()
+                is_quota = (
+                    isinstance(e, (google.api_core.exceptions.ResourceExhausted, google.api_core.exceptions.TooManyRequests)) or
+                    any(k in err_str for k in ["quota", "exhausted", "429", "limit"])
+                )
+                if is_quota:
+                    chat_cog = self.bot.get_cog('Chat')
+                    if chat_cog and hasattr(chat_cog, 'is_channel_allowed') and chat_cog.is_channel_allowed(ctx.channel.id):
+                        await ctx.reply("maaf aku lagi cape kita udahan dulu ya sekarang nanti aku bakal balik lagi dengan versi terbaiku")
+                        await self.speak_response(ctx.guild, "maaf aku lagi cape kita udahan dulu ya sekarang nanti aku bakal balik lagi dengan versi terbaiku")
+                else:
+                    await ctx.reply(f"❌ Error: {e}")
 
     # ── Event: Cleanup & Auto Join/Leave ─────────────────
     @commands.Cog.listener()

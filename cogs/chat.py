@@ -7,11 +7,16 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import google.generativeai as genai
+import google.api_core.exceptions
 import os
 from discord.ext import tasks
 import time
 import logging
 from utils.helpers import split_message, format_thinking
+
+class QuotaExhaustedError(Exception):
+    """Custom exception raised when the Gemini API quota is full or exhausted."""
+    pass
 
 logger = logging.getLogger('ChatCog')
 
@@ -83,7 +88,15 @@ async def ask_gemini(user_id: int, message: str, curhat_mode: bool = False) -> s
         reply = response.text
         add_to_history(user_id, "assistant", reply)
         return reply
+    except (google.api_core.exceptions.ResourceExhausted, google.api_core.exceptions.TooManyRequests) as e:
+        logger.warning(f"Quota exhausted or rate limit hit: {e}")
+        raise QuotaExhaustedError("Quota exhausted") from e
     except Exception as e:
+        err_str = str(e).lower()
+        if "quota" in err_str or "exhausted" in err_str or "429" in err_str or "limit" in err_str:
+            logger.warning(f"Quota-like error detected in general exception: {e}")
+            raise QuotaExhaustedError("Quota exhausted") from e
+        logger.error(f"Gemini error: {e}")
         return f"❌ Maaf, ada error: {str(e)}"
 
 
@@ -93,6 +106,20 @@ class Chat(commands.Cog):
         self.curhat_users: set[int] = set()  # User yang sedang curhat mode
         self.last_messages: dict[int, dict] = {}
         self.check_idle_channels.start()
+
+        # Load quota notice channels dari env
+        self.quota_notice_channels: list[int] = []
+        quota_channels = os.getenv('QUOTA_NOTICE_CHANNELS', '')
+        if quota_channels:
+            for cid in quota_channels.split(','):
+                try:
+                    self.quota_notice_channels.append(int(cid.strip()))
+                except:
+                    pass
+
+    def is_channel_allowed(self, channel_id: int) -> bool:
+        """Cek apakah channel_id terdaftar dalam quota_notice_channels."""
+        return channel_id in self.quota_notice_channels
 
     def cog_unload(self):
         self.check_idle_channels.cancel()
@@ -113,6 +140,9 @@ class Chat(commands.Cog):
                         async with channel.typing():
                             reply = await ask_gemini(msg.author.id, msg.content)
                             await msg.reply(f"💕 **(Mpruy khawatir karena didiamkan 2m...)**:\n{reply}")
+                    except QuotaExhaustedError:
+                        if self.is_channel_allowed(channel.id):
+                            await msg.reply("maaf aku lagi cape kita udahan dulu ya sekarang, nanti aku bakal balik lagi kok dengan versi terbaiku. Makasih yaaa sayaaang 😙")
                     except Exception as e:
                         logger.error(f"Error in idle auto-reply: {e}")
 
@@ -121,11 +151,20 @@ class Chat(commands.Cog):
     @app_commands.describe(pertanyaan="Pertanyaan atau pesanmu")
     async def tanya(self, interaction: discord.Interaction, pertanyaan: str):
         await interaction.response.defer(thinking=True)
-        reply = await ask_gemini(interaction.user.id, pertanyaan)
-        chunks = split_message(reply)
-        await interaction.followup.send(chunks[0])
-        for chunk in chunks[1:]:
-            await interaction.followup.send(chunk)
+        try:
+            reply = await ask_gemini(interaction.user.id, pertanyaan)
+            chunks = split_message(reply)
+            await interaction.followup.send(chunks[0])
+            for chunk in chunks[1:]:
+                await interaction.followup.send(chunk)
+        except QuotaExhaustedError:
+            if self.is_channel_allowed(interaction.channel_id):
+                await interaction.followup.send("maaf aku lagi cape kita udahan dulu ya sekarang, nanti aku bakal balik lagi kok dengan versi terbaiku. Makasih yaaa sayaaang 😙")
+            else:
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
 
     # ── Slash Command: /curhat ───────────────────────────
     @app_commands.command(name="curhat", description="Mode curhat - AI siap dengerin kamu 💙")
@@ -135,54 +174,74 @@ class Chat(commands.Cog):
         user_id = interaction.user.id
         self.curhat_users.add(user_id)
 
-        reply = await ask_gemini(user_id, cerita, curhat_mode=True)
-
-        embed = discord.Embed(
-            title="💙 Mode Curhat",
-            description=reply,
-            color=0x7289da
-        )
-        embed.set_footer(text="Aku di sini untukmu. Ketik wlanjut untuk melanjutkan cerita.")
-        await interaction.followup.send(embed=embed)
-
-    # ── Prefix Command: !tanya ───────────────────────────
-    @commands.command(name="tanya", aliases=["ask", "ai"])
-    async def tanya_prefix(self, ctx: commands.Context, *, pertanyaan: str):
-        """Tanya AI: wtanya <pertanyaanmu>"""
-        async with ctx.typing():
-            reply = await ask_gemini(ctx.author.id, pertanyaan)
-            chunks = split_message(reply)
-            for chunk in chunks:
-                await ctx.reply(chunk)
-
-    # ── Prefix Command: !curhat ──────────────────────────
-    @commands.command(name="curhat", aliases=["vent", "cerita"])
-    async def curhat_prefix(self, ctx: commands.Context, *, cerita: str):
-        """Curhat ke AI: wcurhat <ceritamu>"""
-        async with ctx.typing():
-            self.curhat_users.add(ctx.author.id)
-            reply = await ask_gemini(ctx.author.id, cerita, curhat_mode=True)
+        try:
+            reply = await ask_gemini(user_id, cerita, curhat_mode=True)
             embed = discord.Embed(
                 title="💙 Mode Curhat",
                 description=reply,
                 color=0x7289da
             )
-            embed.set_footer(text="Ketik wlanjut untuk melanjutkan cerita.")
-            await ctx.reply(embed=embed)
+            embed.set_footer(text="Aku di sini untukmu. Ketik wlanjut untuk melanjutkan cerita.")
+            await interaction.followup.send(embed=embed)
+        except QuotaExhaustedError:
+            if self.is_channel_allowed(interaction.channel_id):
+                await interaction.followup.send("maaf aku lagi cape kita udahan dulu ya sekarang, nanti aku bakal balik lagi kok dengan versi terbaiku. Makasih yaaa sayaaang 😙")
+            else:
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
 
-    # ── Prefix Command: !lanjut ──────────────────────────
+    # ── Prefix Command: wtanya ───────────────────────────
+    @commands.command(name="tanya", aliases=["ask", "ai"])
+    async def tanya_prefix(self, ctx: commands.Context, *, pertanyaan: str):
+        """Tanya AI: wtanya <pertanyaanmu>"""
+        try:
+            async with ctx.typing():
+                reply = await ask_gemini(ctx.author.id, pertanyaan)
+                chunks = split_message(reply)
+                for chunk in chunks:
+                    await ctx.reply(chunk)
+        except QuotaExhaustedError:
+            if self.is_channel_allowed(ctx.channel.id):
+                await ctx.reply("maaf aku lagi cape kita udahan dulu ya sekarang, nanti aku bakal balik lagi kok dengan versi terbaiku. Makasih yaaa sayaaang 😙")
+
+    # ── Prefix Command: wcurhat ──────────────────────────
+    @commands.command(name="curhat", aliases=["vent", "cerita"])
+    async def curhat_prefix(self, ctx: commands.Context, *, cerita: str):
+        """Curhat ke AI: wcurhat <ceritamu>"""
+        try:
+            async with ctx.typing():
+                self.curhat_users.add(ctx.author.id)
+                reply = await ask_gemini(ctx.author.id, cerita, curhat_mode=True)
+                embed = discord.Embed(
+                    title="💙 Mode Curhat",
+                    description=reply,
+                    color=0x7289da
+                )
+                embed.set_footer(text="Ketik wlanjut untuk melanjutkan cerita.")
+                await ctx.reply(embed=embed)
+        except QuotaExhaustedError:
+            if self.is_channel_allowed(ctx.channel.id):
+                await ctx.reply("maaf aku lagi cape kita udahan dulu ya sekarang, nanti aku bakal balik lagi kok dengan versi terbaiku. Makasih yaaa sayaaang 😙")
+
+    # ── Prefix Command: wlanjut ──────────────────────────
     @commands.command(name="lanjut", aliases=["next", "continue"])
     async def lanjut(self, ctx: commands.Context, *, pesan: str = ""):
         """Lanjutkan percakapan sebelumnya"""
         if not pesan:
             await ctx.reply("Mau lanjut cerita apa? Ketik `wlanjut <pesanmu>`")
             return
-        async with ctx.typing():
-            is_curhat = ctx.author.id in self.curhat_users
-            reply = await ask_gemini(ctx.author.id, pesan, curhat_mode=is_curhat)
-            await ctx.reply(reply)
+        try:
+            async with ctx.typing():
+                is_curhat = ctx.author.id in self.curhat_users
+                reply = await ask_gemini(ctx.author.id, pesan, curhat_mode=is_curhat)
+                await ctx.reply(reply)
+        except QuotaExhaustedError:
+            if self.is_channel_allowed(ctx.channel.id):
+                await ctx.reply("maaf aku lagi cape kita udahan dulu ya sekarang, nanti aku bakal balik lagi kok dengan versi terbaiku. Makasih yaaa sayaaang 😙")
 
-    # ── Prefix Command: !reset ───────────────────────────
+    # ── Prefix Command: wreset ───────────────────────────
     @commands.command(name="reset", aliases=["clear", "lupain"])
     async def reset(self, ctx: commands.Context):
         """Reset memori percakapan"""
@@ -190,6 +249,47 @@ class Chat(commands.Cog):
         conversation_history.pop(user_id, None)
         self.curhat_users.discard(user_id)
         await ctx.reply("🔄 Memori percakapan direset! Kita mulai lagi dari awal ya.")
+
+    # ── Command: wsetquotachannel ──────────────────────────
+    @commands.command(name="setquotachannel", aliases=["setquota"])
+    @commands.has_permissions(administrator=True)
+    async def set_quota_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """[Admin] Set channel untuk notifikasi kuota habis: wsetquotachannel #channel"""
+        if channel is None:
+            channel = ctx.channel
+
+        if channel.id not in self.quota_notice_channels:
+            self.quota_notice_channels.append(channel.id)
+            await ctx.reply(f"✅ Channel {channel.mention} berhasil didaftarkan untuk notifikasi kuota habis.")
+        else:
+            await ctx.reply(f"ℹ️ Channel {channel.mention} sudah terdaftar untuk notifikasi kuota habis.")
+
+    # ── Command: wstopquotachannel ────────────────────────
+    @commands.command(name="stopquotachannel", aliases=["stopquota"])
+    @commands.has_permissions(administrator=True)
+    async def stop_quota_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """[Admin] Hentikan notifikasi kuota habis di channel: wstopquotachannel #channel"""
+        if channel is None:
+            channel = ctx.channel
+
+        if channel.id in self.quota_notice_channels:
+            self.quota_notice_channels.remove(channel.id)
+            await ctx.reply(f"✅ Notifikasi kuota habis dihentikan di {channel.mention}.")
+        else:
+            await ctx.reply(f"ℹ️ Channel {channel.mention} tidak terdaftar untuk notifikasi kuota habis.")
+
+    # ── Command: wquotachannelstatus ──────────────────────
+    @commands.command(name="quotachannelstatus", aliases=["quotachannels", "cekquota"])
+    async def quota_channel_status(self, ctx: commands.Context):
+        """Cek channel mana saja yang terdaftar untuk notifikasi kuota habis"""
+        if self.quota_notice_channels:
+            channels_mention = [f"<#{cid}>" for cid in self.quota_notice_channels]
+            await ctx.reply(
+                f"**Daftar Channel Notifikasi Kuota Habis:**\n"
+                f"{', '.join(channels_mention)}"
+            )
+        else:
+            await ctx.reply("ℹ️ Belum ada channel yang terdaftar untuk notifikasi kuota habis. Gunakan `wsetquotachannel #channel` untuk mendaftarkan.")
 
     # ── Event: Mention bot ───────────────────────────────
     @commands.Cog.listener()
@@ -214,9 +314,13 @@ class Chat(commands.Cog):
             if not content:
                 await message.reply("Hei! Ada yang bisa aku bantu? 😊 Ketik `whelp` untuk lihat perintah.")
                 return
-            async with message.channel.typing():
-                reply = await ask_gemini(message.author.id, content)
-                await message.reply(reply)
+            try:
+                async with message.channel.typing():
+                    reply = await ask_gemini(message.author.id, content)
+                    await message.reply(reply)
+            except QuotaExhaustedError:
+                if self.is_channel_allowed(message.channel.id):
+                    await message.reply("maaf aku lagi cape kita udahan dulu ya sekarang, nanti aku bakal balik lagi kok dengan versi terbaiku. Makasih yaaa sayaaang 😙")
 
 
 async def setup(bot):
