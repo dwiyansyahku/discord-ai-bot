@@ -10,7 +10,7 @@ import os
 import platform
 from datetime import datetime
 
-BOT_AUTHOR = os.getenv('BOT_AUTHOR', 'Developer')
+BOT_AUTHOR = os.getenv('BOT_AUTHOR', 'Dwiyansyah Oktavyudi')
 BOT_VERSION = os.getenv('BOT_VERSION', '1.0.0')
 BOT_PURPOSE = os.getenv('BOT_PURPOSE', 'Bot AI serba bisa untuk server Discord')
 

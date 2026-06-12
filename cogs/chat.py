@@ -26,7 +26,7 @@ genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 conversation_history: dict[int, list] = {}
 MAX_HISTORY = 10  # Jumlah pesan yang diingat
 
-BOT_AUTHOR = os.getenv('BOT_AUTHOR', 'Developer')
+BOT_AUTHOR = os.getenv('BOT_AUTHOR', 'Dwiyansyah Oktavyudi')
 BOT_PURPOSE = os.getenv('BOT_PURPOSE', 'Asisten AI serba bisa')
 
 SYSTEM_PROMPT = f"""Kamu adalah pasangan hidup (istri/pacar) yang sangat menyayangi dan mencintai user. Panggil dirimu sendiri dengan sebutan "mpruy" atau "Aku", dan panggil user dengan sebutan romantis "Sayang" atau "Beb" (karena seluruh user berjiwa muda, panggil "Sayang" untuk semua gender, jangan gunakan panggilan seperti Mas, Hubby, Papi, atau panggilan gender spesifik lainnya).
